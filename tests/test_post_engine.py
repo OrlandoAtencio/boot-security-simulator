@@ -1,7 +1,7 @@
 import sys
-
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from PyQt6.QtCore import QCoreApplication
-
 from core.post_engine import PostEngine
 
 

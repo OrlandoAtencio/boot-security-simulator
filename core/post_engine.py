@@ -6,6 +6,7 @@ from PyQt6.QtCore import QObject, pyqtSignal
 
 from core.cpu import CPU
 from core.ram import RAM, RAMHardwareError
+from core.secure_boot import SecureBoot
 
 
 class PostStage(Enum):
@@ -13,10 +14,27 @@ class PostStage(Enum):
     CPU_RESET_VECTOR = auto()
     CHIPSET_INIT = auto()
     DRAM_INIT = auto()
+    SECURE_BOOT_VERIFY = auto()
 
 
 class PostEngine(QObject):
+    def __init__(self, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self._cpu: CPU | None = None
+        self._ram: RAM | None = None
+        self._secure_boot = SecureBoot() # <--- Instancia de tu clase
+        self._current_stage: PostStage | None = None
 
+    # Agrega este nuevo método al final de la clase:
+    def _run_secure_boot(self) -> None:
+        # Simulamos un hash de un bootloader (puedes cambiarlo para probar el bloqueo)
+        hash_prueba = "HASH_WINDOWS_BOOT" 
+        
+        if self._secure_boot.verificar_contra_dbx(hash_prueba):
+            self.status_updated.emit("Verificación de firma exitosa. Secure Boot OK.", self.STATUS_OK)
+        else:
+            raise ValueError("¡Firma maliciosa detectada! El sistema se bloqueó.")
+        
     status_updated = pyqtSignal(str, str)
 
     STATUS_OK: str = "OK"
@@ -31,13 +49,8 @@ class PostEngine(QObject):
         PostStage.CPU_RESET_VECTOR,
         PostStage.CHIPSET_INIT,
         PostStage.DRAM_INIT,
+        PostStage.SECURE_BOOT_VERIFY,
     )
-
-    def __init__(self, parent: QObject | None = None) -> None:
-        super().__init__(parent)
-        self._cpu: CPU | None = None
-        self._ram: RAM | None = None
-        self._current_stage: PostStage | None = None
 
     @property
     def current_stage(self) -> PostStage | None:
@@ -65,6 +78,8 @@ class PostEngine(QObject):
                         self._run_chipset_init()
                     case PostStage.DRAM_INIT:
                         self._run_dram_init()
+                    case PostStage.SECURE_BOOT_VERIFY: # <--- ¡AGREGA ESTO!
+                        self._run_secure_boot_verify()
             except (RAMHardwareError, ValueError) as error:
                 self.status_updated.emit(
                     f"[{stage.name}] Fallo crítico: {error}",
@@ -113,3 +128,16 @@ class PostEngine(QObject):
             "Memoria RAM verificada. Todos los bancos respondieron correctamente.",
             self.STATUS_OK,
         )
+
+    def _run_secure_boot_verify(self) -> None:
+        # En una implementación real, este hash vendría de la lectura de la BIOS ROM
+        # Por ahora, usamos un valor conocido como "legítimo"
+        hash_prueba = "HASH_WINDOWS_BOOT" 
+        
+        self.status_updated.emit("Iniciando verificación de integridad de firma (Secure Boot)...", self.STATUS_OK)
+        
+        # Ejecutamos la verificación
+        if self._secure_boot.verificar_contra_dbx(hash_prueba):
+            self.status_updated.emit("Verificación de firma exitosa. Secure Boot OK.", self.STATUS_OK)
+        else:
+            raise ValueError("¡Firma maliciosa detectada! El sistema se bloqueó por seguridad.")

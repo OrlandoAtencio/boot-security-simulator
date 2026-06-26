@@ -9,12 +9,15 @@ Uso:
 """
 
 import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLabel, QScrollArea, QFrame, QProgressBar
+    QPushButton, QLabel, QScrollArea, QFrame, QProgressBar, QTextEdit
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QFont, QColor, QPalette, QTextCursor
+from core.post_engine import PostEngine
 
 # ---------------------------------------------------------------------------
 # PALETA DE COLORES
@@ -181,6 +184,36 @@ class PostScreen(QWidget):
         self._timers: list[QTimer] = []
         self._build_ui()
         self.run_post()
+        # 1. CREA EL WIDGET (Aquí le dices a Python: "esto existe")
+        self.log_output = QTextEdit()
+        self.log_output.setReadOnly(True) # Para que el usuario no pueda escribir en los logs
+        
+        # 2. AGREGA AL LAYOUT (Para que se vea en pantalla)
+        layout = QVBoxLayout()
+        layout.addWidget(self.log_output)
+        self.setLayout(layout)
+
+        # 1. Instanciamos el motor aquí dentro
+        self.engine = PostEngine()
+        
+        # 2. Conectamos la señal del motor a una función de log local
+        # (Asumiendo que tienes un QTextEdit llamado self.log_output)
+        self.engine.status_updated.connect(self.update_log_display)
+    
+    def update_log_display(self, mensaje: str, estado: str) -> None:
+        # Aquí manejamos el color y lo escribimos en el log de la pantalla POST
+        color = "green" if estado == "OK" else "red"
+        self.log_output.append(f'<span style="color: {color};">{mensaje}</span>')
+    
+    def iniciar_arranque(self):
+        # Esta función la llamaría tu botón de "Encender" o un timer
+        self.log_output.clear()
+        self.engine.run_post_sequence()
+    
+    def showEvent(self, event):
+        # Cada vez que entres a la pantalla POST, iniciamos el arranque
+        self.iniciar_arranque()
+        super().showEvent(event)
 
     # ------------------------------------------------------------------
     # CONSTRUCCIÓN DE LA UI
