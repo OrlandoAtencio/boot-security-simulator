@@ -13,9 +13,9 @@ from PyQt6.QtWidgets import QApplication, QMainWindow, QStackedWidget
 from PyQt6.QtGui import QColor, QPalette
 from PyQt6.QtCore import Qt
 
-from post_screen import PostScreen
-from bios_setup import BiosSetupScreen
-from cyber_dashboard import CyberDashboard
+from ui.post_screen import PostScreen
+from ui.bios_setup import BiosSetupScreen
+from ui.cyber_dashboard import CyberDashboard
 
 
 class SimulatorApp(QMainWindow):
