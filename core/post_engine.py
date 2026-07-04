@@ -24,6 +24,12 @@ class PostEngine(QObject):
         self._ram: RAM | None = None
         self._secure_boot = SecureBoot() # <--- Instancia de tu clase
         self._current_stage: PostStage | None = None
+        self._system_compromised: bool = False  # <-- NUEVO
+
+    @property
+    def system_compromised(self) -> bool:
+        """Fuente de verdad para Fail-Closed en main.py."""
+        return self._system_compromised
 
     # Agrega este nuevo método al final de la clase:
     def _run_secure_boot(self) -> None:
@@ -64,10 +70,17 @@ class PostEngine(QObject):
     def ram(self) -> RAM | None:
         return self._ram
 
-    def run_post_sequence(self) -> bool:
+    def run_post_sequence(self, force_rootkit: bool = False) -> bool:
+        """
+        force_rootkit: viene del botón 'Inyectar Rootkit' de la UI.
+        Permite que la verificación real de Secure Boot reaccione
+        al mismo estado que ve el usuario en pantalla.
+        """
+        self._system_compromised = False
+        self._force_rootkit = force_rootkit  # usado por _run_secure_boot_verify
+
         for stage in self._STAGE_SEQUENCE:
             self._current_stage = stage
-
             try:
                 match stage:
                     case PostStage.POWER_ON:
@@ -78,13 +91,15 @@ class PostEngine(QObject):
                         self._run_chipset_init()
                     case PostStage.DRAM_INIT:
                         self._run_dram_init()
-                    case PostStage.SECURE_BOOT_VERIFY: # <--- ¡AGREGA ESTO!
+                    case PostStage.SECURE_BOOT_VERIFY:
                         self._run_secure_boot_verify()
             except (RAMHardwareError, ValueError) as error:
                 self.status_updated.emit(
                     f"[{stage.name}] Fallo crítico: {error}",
                     self.STATUS_ERROR,
                 )
+                if stage == PostStage.SECURE_BOOT_VERIFY:
+                    self._system_compromised = True
                 return False
 
         return True
@@ -130,14 +145,24 @@ class PostEngine(QObject):
         )
 
     def _run_secure_boot_verify(self) -> None:
-        # En una implementación real, este hash vendría de la lectura de la BIOS ROM
-        # Por ahora, usamos un valor conocido como "legítimo"
-        hash_prueba = "HASH_WINDOWS_BOOT" 
-        
-        self.status_updated.emit("Iniciando verificación de integridad de firma (Secure Boot)...", self.STATUS_OK)
-        
-        # Ejecutamos la verificación
+        # Si el usuario activó "Inyectar Rootkit", forzamos un hash malicioso.
+        # Si no, usamos el hash legítimo de siempre.
+        hash_prueba = "HASH_ROOTKIT_MALICIOSO" if self._force_rootkit else "HASH_WINDOWS_BOOT"
+
+        self.status_updated.emit(
+            "Iniciando verificación de integridad de firma (Secure Boot)...",
+            self.STATUS_OK,
+        )
+
         if self._secure_boot.verificar_contra_dbx(hash_prueba):
             self.status_updated.emit("Verificación de firma exitosa. Secure Boot OK.", self.STATUS_OK)
         else:
             raise ValueError("¡Firma maliciosa detectada! El sistema se bloqueó por seguridad.")
+
+   def reset_security_state(self) -> None:
+        """Handshake de mitigación: limpia el estado tras la limpieza de Andrée."""
+        self._system_compromised = False
+        self.status_updated.emit(
+            "Firmas maliciosas removidas. Estado de seguridad reiniciado.",
+            self.STATUS_OK,
+        )
