@@ -46,12 +46,37 @@ class SimulatorApp(QMainWindow):
 
         # Conectar señales de navegación
         self.post.go_to_bios.connect(lambda: self.stack.setCurrentIndex(1))
-        self.post.post_complete.connect(lambda: self.stack.setCurrentIndex(2))
+        self.post.post_complete.connect(self.validar_pase_dashboard)
         self.bios.go_back.connect(lambda: self.stack.setCurrentIndex(0))
         self.bios.sb_changed.connect(self.dash._set_indicator_from_bios)
 
         # Arrancar en la pantalla POST
+         self.dash.mitigation_activated.connect(self.on_mitigation_complete)
         self.stack.setCurrentIndex(0)
+
+    def validar_pase_dashboard(self):
+        """
+    Interroga al motor real de POST (no a la UI) antes de
+    autorizar el salto al Dashboard.
+    """
+        if self.post.engine.system_compromised:
+         print("[SECURITY] Acceso a Dashboard BLOQUEADO: rootkit detectado.")
+        
+        return  # Fail-Closed: no se mueve el índice del stack
+        self.stack.setCurrentIndex(2)
+
+    def on_mitigation_complete(self):
+        """
+        Se ejecuta cuando el Dashboard confirma que la mitigación
+        limpió las firmas. Reinicia el estado de seguridad y
+        permite un nuevo ciclo de POST limpio y autorizado.
+        """
+        self.post.engine.reset_security_state()
+        self.post._injected = False  # el botón "Inyectar Rootkit" vuelve a su estado base
+
+        print("[SECURITY] Mitigación confirmada. Reiniciando ciclo de POST.")
+        self.stack.setCurrentIndex(0)
+        self.post.run_post()
 
     def keyPressEvent(self, event):
         # Navegación global con teclas de función
