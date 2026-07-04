@@ -7,7 +7,7 @@ Requiere: pip install PyQt6
 Uso:
     python main.py
 """
-
+from core.post_engine import PostEngine
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
