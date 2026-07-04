@@ -227,6 +227,7 @@ class StatCard(QWidget):
 # PANEL DE CIBERSEGURIDAD
 # ---------------------------------------------------------------------------
 class CyberDashboard(QWidget):
+    mitigation_activated = pyqtSignal()
     def __init__(self, parent=None):
         super().__init__(parent)
         self._injected    = False
@@ -727,6 +728,7 @@ class CyberDashboard(QWidget):
 
         for _, lvl, msg in MITIGATION_LOGS:
             self._add_log("DEFENSA", lvl, msg, C_GREEN)
+            self,mitigation_activated.emit()
 
     def _set_indicator(self, key: str, color: str, status: str):
         ind = self.indicators[key]
