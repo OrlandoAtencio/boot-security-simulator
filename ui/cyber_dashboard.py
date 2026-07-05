@@ -76,6 +76,31 @@ MITIGATION_LOGS = [
     ("DEFENSA", "OK",   "Sistema limpio. Integridad de firmware confirmada"),
 ]
 
+# ===========================================================================
+# MÓDULO INTERNO DE QA: MOTOR DE ASERCIÓN (Fase 3)
+# ===========================================================================
+class SecurityAssertionEngine:
+    @staticmethod
+    def verify_dashboard_integrity(is_injected: bool, btn_inject_enabled: bool, btn_mitigate_enabled: bool) -> bool:
+        """
+        Verifica matemáticamente en tiempo real que el estado booleano de integridad
+        coincida con el estado operacional de los botones en el Dashboard.
+        """
+        try:
+            if is_injected:
+                # Si está infectado, Mitigar DEBE estar activo e Inyectar DEBE estar bloqueado
+                assert btn_mitigate_enabled == True, "[QA CRITICAL] ¡Bypass detectado! Sistema infectado pero mitigación inhabilitada."
+                assert btn_inject_enabled == False, "[QA CRITICAL] Error lógico: Permite inyectar otro rootkit sobre uno activo."
+            else:
+                # Si está mitigado/limpio, Mitigar DEBE bloquearse e Inyectar volver a habilitarse
+                assert btn_mitigate_enabled == False, "[QA WARNING] Falso Positivo: El botón de mitigación sigue activo en sistema limpio."
+                assert btn_inject_enabled == True, "[QA SUCCESS] Estado estable restablecido."
+            
+            print(f"[QA AUDIT - {datetime.now().strftime('%H:%M:%S')}] Aserción Correcta. UI alineada milimétricamente.")
+            return True
+        except AssertionError as e:
+            print(f"[QA AUDIT - CRITICAL ERROR] {str(e)}")
+            return False
 
 # ---------------------------------------------------------------------------
 # WIDGET: Animación de bus de datos
@@ -693,6 +718,10 @@ class CyberDashboard(QWidget):
         self._add_log("ATAQUE", "INFO", f"Inyectando: {rk}", C_AMBER)
         self._log_timer.start(950)
 
+    #     Auditoría de QA en tiempo real para Caso 2 (Fail-Closed)
+        SecurityAssertionEngine.verify_dashboard_integrity(
+        self._injected, self.btn_inject.isEnabled(), self.btn_mitigate.isEnabled()
+                )
     def _mitigate_rootkit(self):
         if not self._injected:
             return
@@ -730,6 +759,10 @@ class CyberDashboard(QWidget):
             self._add_log("DEFENSA", lvl, msg, C_GREEN)
             self,mitigation_activated.emit()
 
+    # Auditoría de QA en tiempo real para Caso 3 (Remediación Limpia)
+            SecurityAssertionEngine.verify_dashboard_integrity(
+                self._injected, self.btn_inject.isEnabled(), self.btn_mitigate.isEnabled()
+            )
     def _set_indicator(self, key: str, color: str, status: str):
         ind = self.indicators[key]
         ind["dot"].setStyleSheet(f"color: {color}; background: transparent;")

@@ -1,0 +1,56 @@
+{
+  "session_id": "SIM-2025-06-06T14:32:01",
+  "simulator_version": "1.0.0",
+  "events": [
+    {
+      "event_id": "EVT-0001",
+      "timestamp": "2025-06-06T14:32:01.887Z",
+      "boot_stage": "POWER_ON",
+      "module": "core.post_engine",
+      "actor": "BackendPOST",
+      "severity": "INFO",
+      "security_status": "CLEAN",
+      "logical_address": "0xFFFF0",
+      "payload": {
+        "description": "Vector de reset de CPU alcanzado. Iniciando secuencia POST.",
+        "cpu_register_EIP": "0xFFFF0",
+        "chipset_id": "SIM-ICH9-001"
+      },
+      "crypto": {
+        "algorithm": "SHA-256",
+        "firmware_hash": "a3f5c1d2e4b67890abcdef1234567890abcdef1234567890abcdef1234567890",
+        "signature_valid": true
+      },
+      "threat_indicators": {
+        "rootkit_detected": false,
+        "tampered_region": null,
+        "attack_vector": null
+      }
+    },
+    {
+      "event_id": "EVT-0007",
+      "timestamp": "2025-06-06T14:32:05.112Z",
+      "boot_stage": "FIRMWARE_VERIFICATION",
+      "module": "crypto.secure_boot",
+      "actor": "SecureBoot",
+      "severity": "CRITICAL",
+      "security_status": "TAMPERED",
+      "logical_address": "0xF0000",
+      "payload": {
+        "description": "Hash de firmware no coincide con el certificado raíz. Posible rootkit de firmware.",
+        "expected_hash": "a3f5c1d2e4b67890abcdef1234567890abcdef1234567890abcdef1234567890",
+        "computed_hash":  "deadbeef1234567890abcdef1234567890abcdef1234567890abcdefdeadbeef"
+      },
+      "crypto": {
+        "algorithm": "SHA-256",
+        "firmware_hash": "deadbeef1234567890abcdef1234567890abcdef1234567890abcdefdeadbeef",
+        "signature_valid": false
+      },
+      "threat_indicators": {
+        "rootkit_detected": true,
+        "tampered_region": "0xF0000-0xFFFFF",
+        "attack_vector": "FIRMWARE_FLASH_INJECT"
+      }
+    }
+  ]
+}
