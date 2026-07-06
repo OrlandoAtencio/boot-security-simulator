@@ -51,18 +51,18 @@ class SimulatorApp(QMainWindow):
         self.bios.sb_changed.connect(self.dash._set_indicator_from_bios)
 
         # Arrancar en la pantalla POST
-         self.dash.mitigation_activated.connect(self.on_mitigation_complete)
+        self.dash.mitigation_activated.connect(self.on_mitigation_complete)
         self.stack.setCurrentIndex(0)
 
     def validar_pase_dashboard(self):
         """
-    Interroga al motor real de POST (no a la UI) antes de
-    autorizar el salto al Dashboard.
-    """
+        Interroga al motor real de POST (no a la UI) antes de
+        autorizar el salto al Dashboard.
+        """
         if self.post.engine.system_compromised:
-         print("[SECURITY] Acceso a Dashboard BLOQUEADO: rootkit detectado.")
-        
-        return  # Fail-Closed: no se mueve el índice del stack
+            print("[SECURITY] Acceso a Dashboard BLOQUEADO: rootkit detectado.")
+            return
+
         self.stack.setCurrentIndex(2)
 
     def on_mitigation_complete(self):

@@ -718,10 +718,10 @@ class CyberDashboard(QWidget):
         self._add_log("ATAQUE", "INFO", f"Inyectando: {rk}", C_AMBER)
         self._log_timer.start(950)
 
-    #     Auditoría de QA en tiempo real para Caso 2 (Fail-Closed)
         SecurityAssertionEngine.verify_dashboard_integrity(
-        self._injected, self.btn_inject.isEnabled(), self.btn_mitigate.isEnabled()
-                )
+            self._injected, self.btn_inject.isEnabled(), self.btn_mitigate.isEnabled()
+        )
+
     def _mitigate_rootkit(self):
         if not self._injected:
             return
@@ -757,12 +757,13 @@ class CyberDashboard(QWidget):
 
         for _, lvl, msg in MITIGATION_LOGS:
             self._add_log("DEFENSA", lvl, msg, C_GREEN)
-            self,mitigation_activated.emit()
 
-    # Auditoría de QA en tiempo real para Caso 3 (Remediación Limpia)
-            SecurityAssertionEngine.verify_dashboard_integrity(
-                self._injected, self.btn_inject.isEnabled(), self.btn_mitigate.isEnabled()
-            )
+        self.mitigation_activated.emit()
+
+        SecurityAssertionEngine.verify_dashboard_integrity(
+            self._injected, self.btn_inject.isEnabled(), self.btn_mitigate.isEnabled()
+        )
+
     def _set_indicator(self, key: str, color: str, status: str):
         ind = self.indicators[key]
         ind["dot"].setStyleSheet(f"color: {color}; background: transparent;")

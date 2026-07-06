@@ -7,6 +7,7 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from config.settings import SecurityStatus
+import hashlib
 class SecureBoot:
     """
     Implementa la verificación criptográfica del arranque (UEFI Secure Boot).
@@ -41,7 +42,19 @@ class SecureBoot:
 
         TODO: Implementar — Backend Secure Boot
         """
-        pass
+        # Para la simulación, (re)establecemos las bases de datos y el estado
+        try:
+            # Asegurar que exista al menos una firma válida en db
+            if not self.db:
+                self.db = ["HASH_BOOTLOADER_VALIDO_001", "HASH_WINDOWS_BOOT"]
+            # Asegurar que dbx exista
+            if not hasattr(self, "dbx"):
+                self.dbx = []
+            self.estado = SecurityStatus.CLEAN
+            return True
+        except Exception:
+            self.estado = SecurityStatus.UNKNOWN
+            return False
 
     def verificar_firmas(self, datos: bytes) -> bool:
         """
@@ -51,7 +64,30 @@ class SecureBoot:
 
         TODO: Implementar — Backend Secure Boot
         """
-        pass
+        if not self.habilitado:
+            # Si Secure Boot está deshabilitado, siempre permitimos continuar
+            self.estado = SecurityStatus.BYPASSED
+            return True
+
+        # Calculamos el hash SHA-256 de los datos y lo comparamos
+        h = hashlib.sha256()
+        h.update(datos)
+        digest = h.hexdigest().upper()
+
+        # Si está en la lista revocada (dbx) -> falla
+        if digest in (x.upper() for x in self.dbx):
+            self.estado = SecurityStatus.BLOCKED
+            print(f"[ALERTA DE SEGURIDAD] ¡Firma {digest} encontrada en dbx (Revocada)!")
+            return False
+
+        # Si está en db (lista blanca) -> ok
+        if digest in (x.upper() for x in self.db):
+            self.estado = SecurityStatus.VERIFIED
+            return True
+
+        # Si no está en ninguna lista -> considerar sospechoso
+        self.estado = SecurityStatus.TAMPERED
+        return False
 
     def verificar_contra_dbx(self, hash_valor: str) -> bool:
         """
@@ -60,12 +96,23 @@ class SecureBoot:
 
         TODO: Implementar — Backend Secure Boot
         """
-        if hash_valor in self.dbx:
+        if hash_valor is None:
+            return False
+
+        hv = hash_valor.upper()
+        if hv in (x.upper() for x in getattr(self, "dbx", [])):
             print(f"[ALERTA DE SEGURIDAD] ¡Firma {hash_valor} encontrada en dbx (Revocada)!")
-            self.estado = SecurityStatus.UNKNOWN # O algún estado de error
-            return False # ¡Bloqueamos el arranque!
-        
-        return True # El hash no es peligroso, puede continuar.
+            self.estado = SecurityStatus.BLOCKED
+            return False
+
+        # Si está en la db blanca, la consideramos verificada
+        if hv in (x.upper() for x in getattr(self, "db", [])):
+            self.estado = SecurityStatus.VERIFIED
+            return True
+
+        # No conocido — tratar como adulterado
+        self.estado = SecurityStatus.TAMPERED
+        return False
 
     def agregar_a_dbx(self, hash_valor: str, motivo: str) -> bool:
         """
@@ -75,7 +122,17 @@ class SecureBoot:
 
         TODO: Implementar — Backend Secure Boot
         """
-        pass
+        if not hash_valor:
+            return False
+        if not hasattr(self, "dbx"):
+            self.dbx = []
+        hv = hash_valor.upper()
+        if hv in (x.upper() for x in self.dbx):
+            return False
+        self.dbx.append(hash_valor)
+        self.estado = SecurityStatus.BLOCKED
+        print(f"[SECURE_BOOT] Agregado a dbx: {hash_valor} — {motivo}")
+        return True
 
     def obtener_estado(self) -> dict:
         """
@@ -84,4 +141,10 @@ class SecureBoot:
 
         TODO: Implementar — Backend Secure Boot
         """
-        pass
+        return {
+            "habilitado": bool(self.habilitado),
+            "platform_key": bool(self.platform_key),
+            "db_count": len(getattr(self, "db", [])),
+            "dbx_count": len(getattr(self, "dbx", [])),
+            "estado": self.estado.name if isinstance(self.estado, SecurityStatus) else str(self.estado),
+        }

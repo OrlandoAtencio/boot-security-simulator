@@ -159,7 +159,7 @@ class PostEngine(QObject):
         else:
             raise ValueError("¡Firma maliciosa detectada! El sistema se bloqueó por seguridad.")
 
-   def reset_security_state(self) -> None:
+    def reset_security_state(self) -> None:
         """Handshake de mitigación: limpia el estado tras la limpieza de Andrée."""
         self._system_compromised = False
         self.status_updated.emit(

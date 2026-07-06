@@ -1,7 +1,12 @@
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from PyQt6.QtCore import QCoreApplication
+try:
+    from PyQt6.QtCore import QCoreApplication
+    _HAS_PYQT6 = True
+except ModuleNotFoundError:
+    _HAS_PYQT6 = False
+    print("[TEST SKIP] PyQt6 no está instalado — pruebas GUI serán omitidas.")
 from core.post_engine import PostEngine
 
 
@@ -47,6 +52,10 @@ def correr_post_con_fallo_ram() -> None:
 
 
 def main() -> None:
+    if not _HAS_PYQT6:
+        print("PyQt6 ausente — omitiendo ejecución de pruebas que requieren GUI.")
+        return
+
     app = QCoreApplication(sys.argv)
 
     correr_post_normal()

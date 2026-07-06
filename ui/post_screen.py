@@ -179,34 +179,33 @@ class PostScreen(QWidget):
     post_complete = pyqtSignal()
 
     def __init__(self, parent=None):
-        def __init__(self, parent=None):
-    super().__init__(parent)
-    self._injected = False
-    self._timers: list[QTimer] = []
+        super().__init__(parent)
+        self._injected = False
+        self._timers: list[QTimer] = []
 
-    self.log_output = QTextEdit()
-    self.log_output.setReadOnly(True)
+        self.log_output = QTextEdit()
+        self.log_output.setReadOnly(True)
 
-    self._build_ui()
+        self._build_ui()
 
-    self.engine = PostEngine()
-    self.engine.status_updated.connect(self.update_log_display)
+        self.engine = PostEngine()
+        self.engine.status_updated.connect(self.update_log_display)
 
-    self.run_post()  # primera corrida al construir la pantalla
+        self.run_post()  # primera corrida al construir la pantalla
 
-def update_log_display(self, mensaje: str, estado: str) -> None:
-    color = "green" if estado == "OK" else "red"
-    self.log_output.append(f'<span style="color: {color};">{mensaje}</span>')
+    def update_log_display(self, mensaje: str, estado: str) -> None:
+        color = "green" if estado == "OK" else "red"
+        self.log_output.append(f'<span style="color: {color};">{mensaje}</span>')
 
-def iniciar_arranque(self):
-    """Corre el motor REAL de verificación (no solo la animación)."""
-    self.log_output.clear()
-    return self.engine.run_post_sequence(force_rootkit=self._injected)
+    def iniciar_arranque(self):
+        """Corre el motor REAL de verificación (no solo la animación)."""
+        self.log_output.clear()
+        return self.engine.run_post_sequence(force_rootkit=self._injected)
 
-def showEvent(self, event):
-    # Ya no dispara la corrida por su cuenta para evitar duplicar
-    # la ejecución del motor; run_post() ya se encarga de todo.
-    super().showEvent(event)
+    def showEvent(self, event):
+        # Ya no dispara la corrida por su cuenta para evitar duplicar
+        # la ejecución del motor; run_post() ya se encarga de todo.
+        super().showEvent(event)
 
     # ------------------------------------------------------------------
     # CONSTRUCCIÓN DE LA UI
@@ -325,48 +324,48 @@ def showEvent(self, event):
     # ------------------------------------------------------------------
     # LÓGICA DEL POST
     # ------------------------------------------------------------------
-def run_post(self):
-    """Limpia la terminal, corre el motor real y reproduce la animación."""
-    for t in self._timers:
-        t.stop()
-    self._timers.clear()
+    def run_post(self):
+        """Limpia la terminal, corre el motor real y reproduce la animación."""
+        for t in self._timers:
+            t.stop()
+        self._timers.clear()
 
-    while self.terminal_layout.count() > 1:
-        item = self.terminal_layout.takeAt(0)
-        if item.widget():
-            item.widget().deleteLater()
+        while self.terminal_layout.count() > 1:
+            item = self.terminal_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
 
-    # 1. Corremos el motor REAL primero (fuente de verdad de seguridad)
-    resultado_ok = self.iniciar_arranque()
+        # 1. Corremos el motor REAL primero (fuente de verdad de seguridad)
+        resultado_ok = self.iniciar_arranque()
 
-    # 2. La animación visual usa el mismo resultado para decidir qué mostrar
-    lines = ROOTKIT_LINES if not resultado_ok else NORMAL_LINES
+        # 2. La animación visual usa el mismo resultado para decidir qué mostrar
+        lines = ROOTKIT_LINES if not resultado_ok else NORMAL_LINES
 
-    for i, entry in enumerate(lines):
-        delay = entry["delay"]
-        timer = QTimer(self)
-        timer.setSingleShot(True)
+        for entry in lines:
+            delay = entry["delay"]
+            timer = QTimer(self)
+            timer.setSingleShot(True)
 
-        if entry["type"] == "bar":
-            timer.timeout.connect(
-                lambda e=entry: self._add_bar(e["text"], e["val"], e["max"], e["unit"])
-            )
-        else:
-            timer.timeout.connect(
-                lambda e=entry: self._add_line(e["text"], COLOR_MAP.get(e["type"], C_TEXT))
-            )
+            if entry["type"] == "bar":
+                timer.timeout.connect(
+                    lambda e=entry: self._add_bar(e["text"], e["val"], e["max"], e["unit"])
+                )
+            else:
+                timer.timeout.connect(
+                    lambda e=entry: self._add_line(e["text"], COLOR_MAP.get(e["type"], C_TEXT))
+                )
 
-        timer.start(delay)
-        self._timers.append(timer)
+            timer.start(delay)
+            self._timers.append(timer)
 
-    # 3. post_complete solo se emite si el motor confirmó integridad
-    if resultado_ok:
-        last_delay = NORMAL_LINES[-1]["delay"] + 800
-        finish_timer = QTimer(self)
-        finish_timer.setSingleShot(True)
-        finish_timer.timeout.connect(self.post_complete.emit)
-        finish_timer.start(last_delay)
-        self._timers.append(finish_timer)
+        # 3. post_complete solo se emite si el motor confirmó integridad
+        if resultado_ok:
+            last_delay = NORMAL_LINES[-1]["delay"] + 800
+            finish_timer = QTimer(self)
+            finish_timer.setSingleShot(True)
+            finish_timer.timeout.connect(self.post_complete.emit)
+            finish_timer.start(last_delay)
+            self._timers.append(finish_timer)
 
     def _add_line(self, text: str, color: str):
         lbl = QLabel(text)
