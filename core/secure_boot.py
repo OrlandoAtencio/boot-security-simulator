@@ -114,6 +114,22 @@ class SecureBoot:
         self.estado = SecurityStatus.TAMPERED
         return False
 
+    def restaurar_firmware(self) -> bool:
+        """
+        Fase 3:
+        Simula la restauración del firmware utilizando una Golden Image.
+        """
+    
+        print("[INFO] Iniciando restauración del firmware...")
+    
+        # Simulación de recuperación
+        self.estado = SecurityStatus.VERIFIED
+    
+        print("[OK] Golden Image aplicada correctamente.")
+        print("[OK] Integridad del firmware restaurada.")
+    
+        return True
+
     def agregar_a_dbx(self, hash_valor: str, motivo: str) -> bool:
         """
         Agrega un hash a la lista de firmas revocadas (dbx).
@@ -148,3 +164,4 @@ class SecureBoot:
             "dbx_count": len(getattr(self, "dbx", [])),
             "estado": self.estado.name if isinstance(self.estado, SecurityStatus) else str(self.estado),
         }
+        
