@@ -1,66 +1,61 @@
-import sys
 import os
+import sys
+import pytest
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-try:
-    from PyQt6.QtCore import QCoreApplication
-    _HAS_PYQT6 = True
-except ModuleNotFoundError:
-    _HAS_PYQT6 = False
-    print("[TEST SKIP] PyQt6 no está instalado — pruebas GUI serán omitidas.")
+
 from core.post_engine import PostEngine
+from core.secure_boot import SecureBoot
 
 
-def mostrar_estado(mensaje: str, estado: str) -> None:
-    print(f"[{estado}] {mensaje}")
-
-
-def correr_post_normal() -> None:
-    print("\n=== PRUEBA 1: Secuencia de POST normal ===\n")
-
+def test_post_engine_clean_boot():
     engine = PostEngine()
-    engine.status_updated.connect(mostrar_estado)
+    engine.apply_bios_configuration({
+        "secure_boot": True,
+        "sb_mode": "Standard",
+        "boot1": "NVMe SSD",
+        "boot2": "USB Drive",
+        "boot3": "LAN / PXE",
+        "tpm": True,
+        "measured_boot": True,
+        "wake_on_lan": False,
+        "acpi_state": "S3 (Suspend)",
+    })
 
-    exito = engine.run_post_sequence()
+    resultado = engine.run_post_sequence(inject_rootkit=False)
 
-    if exito:
-        print("\n✅ POST completado exitosamente.")
-        print(f"   CPU final -> {engine.cpu.get_state()}")
-    else:
-        print("\n❌ POST detenido por un error crítico.")
+    assert resultado is True
+    assert engine.system_compromised is False
+    assert engine.cpu is not None
+    assert engine.ram is not None
+    assert engine.boot_order[0] == "NVMe SSD"
 
 
-def correr_post_con_fallo_ram() -> None:
-    print("\n=== PRUEBA 2: Secuencia de POST con fallo simulado en RAM ===\n")
-
+def test_post_engine_detects_rootkit_when_injected(monkeypatch):
     engine = PostEngine()
-    engine.status_updated.connect(mostrar_estado)
+    engine.apply_bios_configuration({
+        "secure_boot": True,
+        "sb_mode": "Standard",
+        "boot1": "NVMe SSD",
+        "boot2": "USB Drive",
+        "boot3": "LAN / PXE",
+        "tpm": True,
+        "measured_boot": True,
+        "wake_on_lan": False,
+        "acpi_state": "S3 (Suspend)",
+    })
 
-    def dram_init_con_fallo() -> None:
-        from core.ram import RAM
-        engine._ram = RAM()
-        engine._ram.simulate_failure = True
-        engine._ram.verify_integrity()
+    # Fuerza la inyección para que el ataque pase al análisis de Secure Boot.
+    monkeypatch.setattr("core.rootkit_module.random.random", lambda: 0.0)
 
-    engine._run_dram_init = dram_init_con_fallo
+    resultado = engine.run_post_sequence(inject_rootkit=True)
 
-    exito = engine.run_post_sequence()
-
-    if exito:
-        print("\n✅ POST completado exitosamente.")
-    else:
-        print("\n❌ POST detenido por un error crítico (esperado en esta prueba).")
-
-
-def main() -> None:
-    if not _HAS_PYQT6:
-        print("PyQt6 ausente — omitiendo ejecución de pruebas que requieren GUI.")
-        return
-
-    app = QCoreApplication(sys.argv)
-
-    correr_post_normal()
-    correr_post_con_fallo_ram()
+    assert resultado is False
+    assert engine.system_compromised is True
+    assert engine.current_stage.name == "SECURE_BOOT_VERIFY"
 
 
-if __name__ == "__main__":
-    main()
+def test_secure_boot_known_hashes():
+    sb = SecureBoot()
+    assert sb.verificar_contra_dbx("HASH_WINDOWS_BOOT") is True
+    assert sb.verificar_contra_dbx("HASH_MALWARE_ROOTKIT_001") is False
+    assert sb.estado.name in {"VERIFIED", "BLOCKED"}

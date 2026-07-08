@@ -36,8 +36,9 @@ class SimulatorApp(QMainWindow):
         self.setCentralWidget(self.stack)
 
         # Crear las 3 pantallas
-        self.post    = PostScreen()
         self.bios    = BiosSetupScreen()
+        initial_bios_config = self.bios._config.copy()
+        self.post    = PostScreen(bios_config=initial_bios_config)
         self.dash    = CyberDashboard()
 
         self.stack.addWidget(self.post)   # índice 0
@@ -47,11 +48,22 @@ class SimulatorApp(QMainWindow):
         # Conectar señales de navegación
         self.post.go_to_bios.connect(lambda: self.stack.setCurrentIndex(1))
         self.post.post_complete.connect(self.validar_pase_dashboard)
-        self.bios.go_back.connect(lambda: self.stack.setCurrentIndex(0))
-        self.bios.sb_changed.connect(self.dash._set_indicator_from_bios)
-
-        # Arrancar en la pantalla POST
+        self.bios.go_back.connect(self._return_to_post)
+        self.bios.config_changed.connect(self.post.apply_bios_configuration)
+        self.bios.config_changed.connect(self.dash.update_from_bios)
         self.dash.mitigation_activated.connect(self.on_mitigation_complete)
+
+        # Aplicar el estado BIOS inicial a todas las pantallas antes del primer POST
+        initial_bios_config = self.bios._config.copy()
+        self.post.apply_bios_configuration(initial_bios_config)
+        self.dash.update_from_bios(initial_bios_config)
+
+    def _return_to_post(self):
+        # Sincronizar el estado actual del BIOS antes de ejecutar el POST.
+        self.post.apply_bios_configuration(self.bios._config.copy())
+        self.dash.update_from_bios(self.bios._config.copy())
+
+        self.post.run_post()
         self.stack.setCurrentIndex(0)
 
     def validar_pase_dashboard(self):
@@ -72,9 +84,14 @@ class SimulatorApp(QMainWindow):
         permite un nuevo ciclo de POST limpio y autorizado.
         """
         self.post.engine.reset_security_state()
-        self.post._injected = False  # el botón "Inyectar Rootkit" vuelve a su estado base
+        self.post.reset_injection_state()
 
         print("[SECURITY] Mitigación confirmada. Reiniciando ciclo de POST.")
+
+        # Reaplicar la configuración BIOS actual para mantener coherencia.
+        self.post.apply_bios_configuration(self.bios._config.copy())
+        self.dash.update_from_bios(self.bios._config.copy())
+
         self.stack.setCurrentIndex(0)
         self.post.run_post()
 

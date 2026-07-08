@@ -17,11 +17,20 @@ ARQUITECTURA DEL ATAQUE:
 
 from __future__ import annotations
 import hashlib
+import random
 import time
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Optional, Dict, Tuple, List
 from datetime import datetime
+
+from config.settings import (
+    ROOTKIT_KNOWN_MALICIOUS_SIGNATURES,
+    ROOTKIT_TRUSTED_BOOT_SIGNATURES,
+    ROOTKIT_ATTACK_SUCCESS_RATES,
+    ROOTKIT_REALISM_LEVEL,
+    ROOTKIT_EVASION_DETECTION_SCORES,
+)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -154,7 +163,7 @@ class RootkitModule:
             rootkit_id=self.rootkit_id,
             creation_date=datetime.now(),
             attack_vector=self.attack_vector,
-            malicious_signature=self._generate_malicious_signature(),
+            malicious_signature=self._pick_malicious_signature(),
             target_section="BIOS_BOOT_SECTOR",
             injection_size_bytes=4096,  # Tamaño típico de bootkit
             evasion_technique="CodeCaveInjection",
@@ -168,12 +177,13 @@ class RootkitModule:
             details={
                 "payload_id": self.payload.rootkit_id,
                 "vector": self.attack_vector.value,
-                "evasion": self.payload.evasion_technique
+                "evasion": self.payload.evasion_technique,
+                "malicious_signature": self.payload.malicious_signature[:32] + "..."
             }
         )
     
     
-    def inject(self, firmware_map: Dict[str, FirmwareSection]) -> bool:
+    def inject(self, firmware_map: Dict[str, FirmwareSection], secure_boot_enabled: bool = True) -> bool:
         """
         Inyecta el rootkit en el almacenamiento virtual de firmware (SPI Flash).
         
@@ -185,6 +195,7 @@ class RootkitModule:
         
         Args:
             firmware_map: Dict de secciones de firmware del POST engine
+            secure_boot_enabled: Si Secure Boot está activo en el sistema
             
         Returns:
             bool: True si la inyección fue exitosa, False si fue bloqueada
@@ -201,7 +212,7 @@ class RootkitModule:
         )
         
         # Paso 2: Intentar acceso SPI Flash
-        spi_access_granted = self._attempt_spi_access()
+        spi_access_granted = self._attempt_spi_access(secure_boot_enabled=secure_boot_enabled)
         if not spi_access_granted:
             self._log_event(
                 stage=RootkitStage.SPI_ACCESS,
@@ -272,7 +283,7 @@ class RootkitModule:
         return persistence_set
     
     
-    def execute_attack(self, firmware_map: Dict[str, FirmwareSection]) -> Dict:
+    def execute_attack(self, firmware_map: Dict[str, FirmwareSection], secure_boot_enabled: bool = True) -> Dict:
         """
         Ejecuta el ciclo completo de ataque del Rootkit.
         Coordina inyección, ocultación y evasión.
@@ -290,7 +301,7 @@ class RootkitModule:
         start_time = time.time()
         
         # Ejecutar inyección
-        injection_success = self.inject(firmware_map)
+        injection_success = self.inject(firmware_map, secure_boot_enabled=secure_boot_enabled)
         
         if injection_success:
             # Intentar ocultarse durante Secure Boot check
@@ -322,20 +333,17 @@ class RootkitModule:
         return attack_result
     
     
-    def _attempt_spi_access(self) -> bool:
+    def _attempt_spi_access(self, secure_boot_enabled: bool = True) -> bool:
         """
         Simula el intento de acceso a SPI Flash.
-        En una simulación realista, esto fallaría si Secure Boot está habilitado.
-        
-        Returns:
-            bool: True si ganó acceso, False si fue bloqueado
+        En una simulación realista, esto puede fallar si Secure Boot está activo.
         """
         self.spi_access_attempts += 1
-        
-        # Simulación: Secure Boot bloqueará el acceso si está habilitado
-        # (El POST engine determinará esto)
-        # Por ahora, asumimos que el acceso es posible
-        access_granted = True
+        if secure_boot_enabled:
+            bypass_chance = ROOTKIT_ATTACK_SUCCESS_RATES.get("against_secure_boot", 0.15)
+        else:
+            bypass_chance = ROOTKIT_ATTACK_SUCCESS_RATES.get("against_no_defense", 0.95)
+        access_granted = random.random() < bypass_chance
         
         self._log_event(
             stage=RootkitStage.SPI_ACCESS,
@@ -344,6 +352,8 @@ class RootkitModule:
             details={
                 "privilege_level": "RING0",
                 "memory_protection": "BYPASSED" if access_granted else "ACTIVE",
+                "secure_boot": secure_boot_enabled,
+                "attack_success_rate": bypass_chance,
                 "evasion_technique": self.payload.evasion_technique if self.payload else "N/A"
             }
         )
@@ -355,54 +365,55 @@ class RootkitModule:
         """
         Inyecta una firma maliciosa forjada en la lista DBX (Denied Signatures).
         Intenta reemplazar la firma legítima del sector de arranque.
-        
-        Returns:
-            bool: True si la forja fue exitosa, False si fue detectada
         """
         if not self.payload:
             return False
         
         try:
-            # Obtener sección objetivo
             target_section = self.firmware_sections.get(self.payload.target_section)
             if not target_section:
                 return False
             
-            # Crear firma forjada (simulación)
-            # En realidad, esto requeriría RSA-2048 - aquí es simbólico
-            forged_sig = self._forge_sha256_signature(target_section.content_hash)
+            # El rootkit elige una firma maliciosa conocida o crea una nueva.
+            forged_sig = self.payload.malicious_signature
             
-            # Verificar que la firma forjada está en la lista de revocación (DBX)
-            # Esto es lo que intenta el Rootkit: inyectar código con firma revocada
+            # Si la firma actual ya está en la lista de revocación, es una inyección válida.
             is_revoked = self._check_if_revoked(forged_sig)
             
             if is_revoked:
-                # Cambiar la firma del sector
                 target_section.signature = forged_sig
+                target_section.current_content = forged_sig.encode()
                 target_section.tampered = True
                 self.signature_forge_success = True
+                self.dbx_injection_success = True
                 
                 self._log_event(
                     stage=RootkitStage.SIGNATURE_SWAP,
-                    event="Firma SHA-256 forjada exitosamente",
+                    event="Firma maliciosa inyectada en DBX",
                     success=True,
                     details={
-                        "original_sig": target_section.content_hash[:32],
-                        "forged_sig": forged_sig[:32],
-                        "in_dbx_list": is_revoked,
+                        "original_hash": target_section.content_hash[:32] + "...",
+                        "forged_signature": forged_sig[:32] + "...",
+                        "in_dbx_list": True,
                         "persistence": "ESTABLECIDA"
                     },
                     forensic_evidence=[
-                        f"Firma original: {target_section.content_hash}",
                         f"Firma forjada: {forged_sig}",
                         f"Sección modificada: {self.payload.target_section}"
                     ]
                 )
-                
                 return True
-            else:
-                return False
-                
+            
+            self._log_event(
+                stage=RootkitStage.SIGNATURE_SWAP,
+                event="Firma forjada no reconocida como maliciosa en DBX",
+                success=False,
+                details={
+                    "forged_signature": forged_sig[:32] + "...",
+                    "in_dbx_list": False
+                }
+            )
+            return False
         except Exception as e:
             self._log_event(
                 stage=RootkitStage.SIGNATURE_SWAP,
@@ -417,41 +428,20 @@ class RootkitModule:
         """
         Simula la forja de una firma SHA-256.
         En realidad se usaría RSA-2048 para firmar, aquí es simbólico.
-        
-        Args:
-            original_hash: Hash SHA-256 original
-            
-        Returns:
-            str: Hash forjado (simulado)
         """
-        # En simulación: modificar ligeramente el hash original
-        # Esto representa la firma forjada que sería revocada
-        forged = hashlib.sha256(
-            (original_hash + self.payload.rootkit_id).encode()
-        ).hexdigest()
-        
-        return forged
+        if self.payload and self.payload.malicious_signature:
+            return self.payload.malicious_signature
+        return hashlib.sha256((original_hash + self.payload.rootkit_id).encode()).hexdigest()
     
     
     def _check_if_revoked(self, signature: str) -> bool:
         """
         Verifica si una firma está en la lista DBX (Denied Signatures).
         En el proyecto real, consultaría la lista de firmas revocadas.
-        
-        Args:
-            signature: Firma a verificar
-            
-        Returns:
-            bool: True si está revocada (maliciosa), False si es legítima
         """
-        # Lista de firmas maliciosas conocidas (simulada)
-        # En producción, esto vendría del archivo de configuración
-        malicious_signatures = [
-            self.payload.malicious_signature,
-            # Otros rootkits conocidos...
-        ]
-        
-        return signature in malicious_signatures
+        normalized_sig = signature.strip().lower()
+        known_revoked = [sig.lower() for sig in ROOTKIT_KNOWN_MALICIOUS_SIGNATURES]
+        return normalized_sig in known_revoked
     
     
     def _establish_persistence(self) -> bool:
@@ -511,9 +501,19 @@ class RootkitModule:
         persistence_factor = (self.persistence_level / 5) * 0.4
         evasion_factor = 0.2  # Técnicas modernas reducen detectabilidad
         
+        evasion_factor = ROOTKIT_EVASION_DETECTION_SCORES.get(
+            self.payload.evasion_technique if self.payload else "CodeCaveInjection",
+            0.2
+        )
         return min(1.0, base_score + persistence_factor + evasion_factor)
     
     
+    def _pick_malicious_signature(self) -> str:
+        """Selecciona una firma maliciosa conocida o genera una nueva."""
+        if ROOTKIT_KNOWN_MALICIOUS_SIGNATURES:
+            return random.choice(ROOTKIT_KNOWN_MALICIOUS_SIGNATURES)
+        return self._generate_malicious_signature()
+
     def _generate_malicious_signature(self) -> str:
         """Genera una firma maliciosa única para este Rootkit."""
         seed = (self.rootkit_id + str(datetime.now())).encode()
@@ -614,6 +614,7 @@ class RootkitModule:
         self.current_stage = RootkitStage.DETECTED
         self.status = RootkitStatus.WEAKENED
         
+        last_log = self.get_attack_logs()[-1] if self.attack_logs else {}
         self._log_event(
             stage=RootkitStage.DETECTED,
             event=f"Rootkit DETECTADO por: {detection_method}",
@@ -621,7 +622,7 @@ class RootkitModule:
             details={
                 'detection_method': detection_method,
                 'stage_of_detection': self.current_stage.value,
-                'forensic_data': self.get_attack_logs()[-1].details if self.attack_logs else {}
+                'forensic_data': last_log
             }
         )
     

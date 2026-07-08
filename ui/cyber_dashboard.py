@@ -836,6 +836,50 @@ class CyberDashboard(QWidget):
             self.stat_sb.set_value("INACTIVO", C_RED)
             self._add_log("BIOS", "WARN", "ADVERTENCIA: Secure Boot desactivado desde BIOS Setup.", C_AMBER)
 
+    def update_from_bios(self, bios_config: dict) -> None:
+        """Actualiza los indicadores y logs del dashboard según la configuración BIOS."""
+        self._set_indicator_from_bios(bios_config.get("secure_boot", True))
+
+        tpm_enabled = bios_config.get("tpm", True)
+        if tpm_enabled:
+            self._set_indicator("tpm", C_GREEN, "OK")
+            self._add_log("BIOS", "OK", "TPM habilitado desde BIOS Setup.", C_GREEN)
+        else:
+            self._set_indicator("tpm", C_RED, "ANOMALÍA")
+            self._add_log("BIOS", "WARN", "TPM deshabilitado en BIOS. Integridad del sistema reducida.", C_AMBER)
+
+        if bios_config.get("measured_boot", True):
+            self._add_log("BIOS", "OK", "Measured Boot habilitado. PCRs actualizados.", C_GREEN)
+        else:
+            self._add_log("BIOS", "WARN", "Measured Boot deshabilitado. Las mediciones de arranque no serán fiables.", C_AMBER)
+
+        if bios_config.get("wake_on_lan", False):
+            self.footer_spi.setText("SPI: Wake-on-LAN habilitado")
+            self.footer_spi.setStyleSheet(f"color: {C_AMBER}; background: transparent;")
+        else:
+            self.footer_spi.setText("SPI: Idle")
+            self.footer_spi.setStyleSheet(f"color: {C_GREEN}; background: transparent;")
+
+        if bios_config.get("sb_mode", "Standard") == "Custom":
+            self._add_log("BIOS", "INFO", "Secure Boot en modo Custom: políticas personalizadas activas.", C_BLUE)
+
+        boot_order_msg = (
+            f"Orden de arranque: {bios_config.get('boot1', 'NVMe SSD')} > "
+            f"{bios_config.get('boot2', 'USB Drive')} > {bios_config.get('boot3', 'LAN / PXE')}"
+        )
+        self._add_log("BIOS", "INFO", boot_order_msg, C_BLUE)
+
+        acpi_msg = f"ACPI State configurado como {bios_config.get('acpi_state', 'S3 (Suspend)')}"
+        self._add_log("BIOS", "INFO", acpi_msg, C_BLUE)
+
+        if bios_config.get('boot1', 'NVMe SSD') == 'LAN / PXE' and not bios_config.get('wake_on_lan', False):
+            self._add_log(
+                "BIOS",
+                "WARN",
+                "Arranque desde LAN sin Wake on LAN: red puede no iniciar el boot.",
+                C_AMBER,
+            )
+
     # ------------------------------------------------------------------
     # TIMERS
     # ------------------------------------------------------------------

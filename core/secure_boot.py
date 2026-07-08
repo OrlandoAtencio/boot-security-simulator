@@ -1,150 +1,140 @@
-# ==============================================================================
+# ======================================================================
 # CLASE 4 — SecureBoot
 # Responsable: Backend Secure Boot
-# ==============================================================================
+# ======================================================================
 
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from config.settings import SecurityStatus
+from config.settings import SecurityStatus, ROOTKIT_KNOWN_MALICIOUS_SIGNATURES
 import hashlib
+
+
 class SecureBoot:
     """
-    Implementa la verificación criptográfica del arranque (UEFI Secure Boot).
+    Simula el motor de verificación de UEFI Secure Boot.
 
-    Cadena de confianza que debe verificarse en orden:
-      Platform Key (PK) → Key Exchange Key (KEK) → Base de firmas (db) → Bootloader
+    Esta clase mantiene:
+      - db: lista de hashes permitidos para bootloaders/cargas de arranque.
+      - dbx: lista de hashes revocados/maliciosos.
+      - habilitado: bandera de Secure Boot.
 
-    Si cualquier eslabón de la cadena falla, el arranque debe ser bloqueado.
-    La base de datos dbx contiene firmas revocadas que también deben verificarse.
-
-    Librería recomendada: pip install cryptography
+    El comportamiento simula un núcleo de verificación de firmas basadas en SHA-256.
     """
+
+    DEFAULT_BOOTLOADER_PAYLOAD = b"UTP_VALID_BOOTLOADER_V1"
+    DEFAULT_WINDOWS_PAYLOAD = b"WINDOWS_BOOTLOADER_V1"
+    ROOTKIT_PAYLOAD = b"MALWARE_ROOTKIT_PAYLOAD_001"
+
+    ALIAS_SIGNATURES = {
+        "HASH_BOOTLOADER_VALIDO_001": DEFAULT_BOOTLOADER_PAYLOAD,
+        "HASH_WINDOWS_BOOT": DEFAULT_WINDOWS_PAYLOAD,
+        "HASH_ROOTKIT_MALICIOSO": ROOTKIT_PAYLOAD,
+        "HASH_MALWARE_ROOTKIT_001": ROOTKIT_PAYLOAD,
+    }
 
     def __init__(self, habilitado: bool = True) -> None:
         self.habilitado = habilitado
         self.platform_key = "PK_MASTER_KEY_2026"
         self.kek = "KEK_UTP_2026"
-        
-        # db: Lista de firmas válidas (firmas digitales permitidas)
-        self.db = ["HASH_BOOTLOADER_VALIDO_001", "HASH_WINDOWS_BOOT"]
-        
-        # dbx: Lista de firmas revocadas (blacklist)
-        self.dbx = ["HASH_MALWARE_ROOTKIT_001"]
-        
+        self.db: list[str] = []
+        self.dbx: list[str] = []
         self.estado = SecurityStatus.UNKNOWN
-        
-    def inicializar(self) -> bool:
-        """
-        Genera y carga las claves y bases de datos para la simulación.
-        Debe generar: PK, KEK, db (con hash del bootloader limpio), dbx vacío.
-        Retorna True si la inicialización fue exitosa.
+        self.inicializar()
 
-        TODO: Implementar — Backend Secure Boot
-        """
-        # Para la simulación, (re)establecemos las bases de datos y el estado
+    def _hash(self, datos: bytes | str) -> str:
+        if isinstance(datos, str):
+            datos = datos.encode("utf-8")
+        return hashlib.sha256(datos).hexdigest().upper()
+
+    def _normalize_hash(self, hash_valor: str | None) -> str:
+        return hash_valor.strip().upper() if hash_valor else ""
+
+    def _resolve_alias(self, hash_valor: str | None) -> str | bytes:
+        normalized = self._normalize_hash(hash_valor)
+        if normalized in self.ALIAS_SIGNATURES:
+            return self.ALIAS_SIGNATURES[normalized]
+        return normalized
+
+    def inicializar(self) -> bool:
+        """Inicializa db y dbx con valores de confianza y revocación."""
         try:
-            # Asegurar que exista al menos una firma válida en db
-            if not self.db:
-                self.db = ["HASH_BOOTLOADER_VALIDO_001", "HASH_WINDOWS_BOOT"]
-            # Asegurar que dbx exista
-            if not hasattr(self, "dbx"):
-                self.dbx = []
+            self.platform_key = "PK_MASTER_KEY_2026"
+            self.kek = "KEK_UTP_2026"
+            self.db = [
+                self._hash(self.DEFAULT_BOOTLOADER_PAYLOAD),
+                self._hash(self.DEFAULT_WINDOWS_PAYLOAD),
+            ]
+            self.dbx = [self._hash(self.ROOTKIT_PAYLOAD)]
+            self.dbx.extend(self._hash(sig) for sig in ROOTKIT_KNOWN_MALICIOUS_SIGNATURES)
             self.estado = SecurityStatus.CLEAN
             return True
         except Exception:
             self.estado = SecurityStatus.UNKNOWN
             return False
 
-    def verificar_firmas(self, datos: bytes) -> bool:
-        """
-        Verifica la cadena completa de confianza sobre los datos dados.
-        Sigue el orden estricto: PK → KEK → db → Bootloader → dbx.
-        Retorna True si toda la cadena es válida, False si algún paso falla.
-
-        TODO: Implementar — Backend Secure Boot
-        """
+    def verificar_firmas(self, datos: bytes | str) -> bool:
+        """Verifica un bootloader contra la lista blanca y la lista negra."""
         if not self.habilitado:
-            # Si Secure Boot está deshabilitado, siempre permitimos continuar
             self.estado = SecurityStatus.BYPASSED
             return True
 
-        # Calculamos el hash SHA-256 de los datos y lo comparamos
-        h = hashlib.sha256()
-        h.update(datos)
-        digest = h.hexdigest().upper()
+        if isinstance(datos, str):
+            datos = self._resolve_alias(datos)
 
-        # Si está en la lista revocada (dbx) -> falla
+        digest = self._hash(datos)
+
         if digest in (x.upper() for x in self.dbx):
             self.estado = SecurityStatus.BLOCKED
-            print(f"[ALERTA DE SEGURIDAD] ¡Firma {digest} encontrada en dbx (Revocada)!")
             return False
 
-        # Si está en db (lista blanca) -> ok
         if digest in (x.upper() for x in self.db):
             self.estado = SecurityStatus.VERIFIED
             return True
 
-        # Si no está en ninguna lista -> considerar sospechoso
         self.estado = SecurityStatus.TAMPERED
         return False
 
-    def verificar_contra_dbx(self, hash_valor: str) -> bool:
-        """
-        Verifica que un hash NO esté en la lista negra (dbx).
-        Retorna True si está limpio (no en dbx), False si está revocado.
-
-        TODO: Implementar — Backend Secure Boot
-        """
-        if hash_valor is None:
+    def verificar_contra_dbx(self, hash_valor: str | None) -> bool:
+        """Verifica si un hash está revocado o pertenece a la lista blanca."""
+        resolved = self._resolve_alias(hash_valor)
+        if not resolved:
             return False
 
-        hv = hash_valor.upper()
-        if hv in (x.upper() for x in getattr(self, "dbx", [])):
-            print(f"[ALERTA DE SEGURIDAD] ¡Firma {hash_valor} encontrada en dbx (Revocada)!")
+        if isinstance(resolved, str):
+            hv = resolved
+        else:
+            hv = self._hash(resolved)
+
+        if hv in (x.upper() for x in self.dbx):
             self.estado = SecurityStatus.BLOCKED
             return False
 
-        # Si está en la db blanca, la consideramos verificada
-        if hv in (x.upper() for x in getattr(self, "db", [])):
+        if hv in (x.upper() for x in self.db):
             self.estado = SecurityStatus.VERIFIED
             return True
 
-        # No conocido — tratar como adulterado
         self.estado = SecurityStatus.TAMPERED
         return False
 
     def agregar_a_dbx(self, hash_valor: str, motivo: str) -> bool:
-        """
-        Agrega un hash a la lista de firmas revocadas (dbx).
-        Simula la revocación de un bootloader comprometido.
-        Retorna True si fue agregado exitosamente.
+        """Revoca un hash moviéndolo de db a dbx."""
+        hv = self._normalize_hash(hash_valor)
+        if not hv:
+            return False
 
-        TODO: Implementar — Backend Secure Boot
-        """
-        if not hash_valor:
-            return False
-        if not hasattr(self, "dbx"):
-            self.dbx = []
-        hv = hash_valor.upper()
-        if hv in (x.upper() for x in self.dbx):
-            return False
-        self.dbx.append(hash_valor)
+        self.db = [x for x in self.db if x.upper() != hv]
+        if hv not in (x.upper() for x in self.dbx):
+            self.dbx.append(hv)
         self.estado = SecurityStatus.BLOCKED
-        print(f"[SECURE_BOOT] Agregado a dbx: {hash_valor} — {motivo}")
         return True
 
     def obtener_estado(self) -> dict:
-        """
-        Retorna un diccionario con el estado actual de Secure Boot.
-        Usado por la interfaz gráfica para mostrar el panel de Secure Boot.
-
-        TODO: Implementar — Backend Secure Boot
-        """
         return {
             "habilitado": bool(self.habilitado),
             "platform_key": bool(self.platform_key),
-            "db_count": len(getattr(self, "db", [])),
-            "dbx_count": len(getattr(self, "dbx", [])),
+            "kek": bool(self.kek),
+            "db_count": len(self.db),
+            "dbx_count": len(self.dbx),
             "estado": self.estado.name if isinstance(self.estado, SecurityStatus) else str(self.estado),
         }

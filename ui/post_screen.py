@@ -11,6 +11,7 @@ Uso:
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from functools import partial
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QScrollArea, QFrame, QProgressBar, QTextEdit
@@ -178,7 +179,7 @@ class PostScreen(QWidget):
     # Señal emitida cuando el POST termina normalmente (→ ir al Dashboard)
     post_complete = pyqtSignal()
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, bios_config: dict | None = None):
         super().__init__(parent)
         self._injected = False
         self._timers: list[QTimer] = []
@@ -191,16 +192,24 @@ class PostScreen(QWidget):
         self.engine = PostEngine()
         self.engine.status_updated.connect(self.update_log_display)
 
+        if bios_config is not None:
+            self.apply_bios_configuration(bios_config)
+
         self.run_post()  # primera corrida al construir la pantalla
 
     def update_log_display(self, mensaje: str, estado: str) -> None:
         color = "green" if estado == "OK" else "red"
         self.log_output.append(f'<span style="color: {color};">{mensaje}</span>')
 
+    def apply_bios_configuration(self, bios_config: dict) -> None:
+        """Aplica cambios de configuración BIOS al motor POST antes de correr el arranque."""
+        if self.engine:
+            self.engine.apply_bios_configuration(bios_config)
+
     def iniciar_arranque(self):
         """Corre el motor REAL de verificación (no solo la animación)."""
         self.log_output.clear()
-        return self.engine.run_post_sequence(force_rootkit=self._injected)
+        return self.engine.run_post_sequence(inject_rootkit=self._injected)
 
     def showEvent(self, event):
         # Ya no dispara la corrida por su cuenta para evitar duplicar
@@ -337,23 +346,26 @@ class PostScreen(QWidget):
 
         # 1. Corremos el motor REAL primero (fuente de verdad de seguridad)
         resultado_ok = self.iniciar_arranque()
+        boot_device = self.engine.boot_order[0] if self.engine else "NVMe SSD"
 
         # 2. La animación visual usa el mismo resultado para decidir qué mostrar
-        lines = ROOTKIT_LINES if not resultado_ok else NORMAL_LINES
+        base_lines = ROOTKIT_LINES if not resultado_ok else NORMAL_LINES
 
-        for entry in lines:
+        for entry in base_lines:
             delay = entry["delay"]
             timer = QTimer(self)
             timer.setSingleShot(True)
 
             if entry["type"] == "bar":
                 timer.timeout.connect(
-                    lambda e=entry: self._add_bar(e["text"], e["val"], e["max"], e["unit"])
+                    partial(self._add_bar, entry["text"], entry["val"], entry["max"], entry["unit"])
                 )
             else:
-                timer.timeout.connect(
-                    lambda e=entry: self._add_line(e["text"], COLOR_MAP.get(e["type"], C_TEXT))
-                )
+                text = entry["text"]
+                if text.startswith("Booting from:"):
+                    text = f"Booting from: {boot_device}..."
+                color = COLOR_MAP.get(entry["type"], C_TEXT)
+                timer.timeout.connect(partial(self._add_line, text, color))
 
             timer.start(delay)
             self._timers.append(timer)
@@ -408,6 +420,13 @@ class PostScreen(QWidget):
             self.btn_inject.setText("⚠  Inyectar Rootkit")
             self.btn_inject.setStyleSheet(self._btn_style(C_BTN_BDR, "#888"))
         self.run_post()
+
+    def reset_injection_state(self) -> None:
+        """Restablece el estado de inyección del POST para ciclos limpios."""
+        self._injected = False
+        if hasattr(self, 'btn_inject'):
+            self.btn_inject.setText("⚠  Inyectar Rootkit")
+            self.btn_inject.setStyleSheet(self._btn_style(C_BTN_BDR, "#888"))
 
     # Capturar tecla DEL para simular ir al Setup
     def keyPressEvent(self, event):

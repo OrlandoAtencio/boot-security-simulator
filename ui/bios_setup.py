@@ -47,11 +47,13 @@ BIOS_ROWS = {
             "group": "STANDARD CMOS FEATURES",
             "items": [
                 {"key": "Date / Time",    "val": "06/05/2025  14:32", "vtype": "normal",
+                 "id": "date_time",
                  "info_title": "Date / Time",
                  "info_desc": "Configura la fecha y hora del RTC del sistema. Afecta la validación de certificados en Secure Boot y los logs de auditoría del TPM."},
                 {"key": "Language",       "val": "English", "vtype": "normal",
+                 "id": "language",
                  "info_title": "Language",
-                 "info_desc": "Idioma de presentación del firmware UEFI. No afecta la funcionalidad de seguridad."},
+                 "info_desc": "Idioma de presentación del firmware UEFI. Afecta los textos del tablero y la localización del simulador."},
             ]
         },
         {
@@ -62,9 +64,11 @@ BIOS_ROWS = {
                  "info_title": "1st Boot Device",
                  "info_desc": "Define la prioridad de arranque. El bootloader se carga desde el primer dispositivo activo. Con Secure Boot activo, cada componente del bootloader debe estar firmado criptográficamente."},
                 {"key": "2nd Boot Device", "val": "USB Drive",  "vtype": "normal",
+                 "id": "boot2",
                  "info_title": "2nd Boot Device",
                  "info_desc": "Segundo dispositivo de arranque si el primero falla o no es bootable."},
                 {"key": "3rd Boot Device", "val": "LAN / PXE",  "vtype": "normal",
+                 "id": "boot3",
                  "info_title": "3rd Boot Device",
                  "info_desc": "Arranque por red via PXE. Requiere configuración del servidor DHCP/TFTP."},
             ]
@@ -92,7 +96,7 @@ BIOS_ROWS = {
                 {"key": "Secure Boot Mode",  "val": "Standard",    "vtype": "normal",
                  "id": "sb_mode",
                  "info_title": "Secure Boot Mode",
-                 "info_desc": "Standard: usa db/dbx de Microsoft. Custom: permite cargar llaves propias del laboratorio."},
+                 "info_desc": "Standard: usa db/dbx de Microsoft. Custom: permite cargar llaves propias del laboratorio. Use Enter para cambiar."},
                 {"key": "Platform Key (PK)", "val": "Enrolled ✓",  "vtype": "on",
                  "info_title": "Platform Key (PK)",
                  "info_desc": "Llave raíz de la cadena de confianza UEFI. Firmada por el fabricante. Cambiarla requiere privilegios físicos."},
@@ -108,22 +112,26 @@ BIOS_ROWS = {
             "group": "TPM / HARDWARE SECURITY",
             "items": [
                 {"key": "TPM 2.0 Device",   "val": "Present / Active", "vtype": "on",
+                 "id": "tpm",
                  "info_title": "TPM 2.0 Device",
-                 "info_desc": "Trusted Platform Module — chip criptográfico para almacenamiento seguro de claves y medición del arranque (PCR registers)."},
+                 "info_desc": "Trusted Platform Module — chip criptográfico para almacenamiento seguro de claves y medición del arranque (PCR registers). Use Enter para cambiar."},
                 {"key": "Measured Boot (PCR)","val": "Enabled", "vtype": "on",
+                 "id": "measured_boot",
                  "info_title": "Measured Boot",
-                 "info_desc": "PCR[0-7] del TPM registran un hash de cada componente del arranque. Cualquier modificación produce un hash diferente, detectable por el sistema."},
+                 "info_desc": "PCR[0-7] del TPM registran un hash de cada componente del arranque. Cualquier modificación produce un hash diferente, detectable por el sistema. Use Enter para cambiar."},
             ]
         },
         {
             "group": "POWER MANAGEMENT",
             "items": [
                 {"key": "Wake on LAN",      "val": "Disabled",  "vtype": "off",
+                 "id": "wake_on_lan",
                  "info_title": "Wake on LAN",
-                 "info_desc": "Permite encender el equipo mediante paquete mágico de red. Desactivado por seguridad en entornos sensibles."},
+                 "info_desc": "Permite encender el equipo mediante paquete mágico de red. Desactivado por seguridad en entornos sensibles. Use Enter para cambiar."},
                 {"key": "ACPI Sleep State", "val": "S3 (Suspend)","vtype": "normal",
+                 "id": "acpi_state",
                  "info_title": "ACPI Sleep State",
-                 "info_desc": "S3: suspende RAM, apaga el resto. S4: hiberna a disco. S5: apagado completo."},
+                 "info_desc": "S3: suspende RAM, apaga el resto. S4: hiberna a disco. S5: apagado completo. Use Enter para cambiar."},
             ]
         },
     ]
@@ -207,16 +215,35 @@ class BiosRow(QFrame):
 # PANTALLA BIOS SETUP
 # ---------------------------------------------------------------------------
 class BiosSetupScreen(QWidget):
-    go_back   = pyqtSignal()             # F10 / ESC → volver a POST
-    sb_changed = pyqtSignal(bool)        # Notifica al Dashboard el estado de Secure Boot
+    go_back      = pyqtSignal()             # F10 / ESC → volver a POST
+    sb_changed   = pyqtSignal(bool)         # Notifica al Dashboard el estado de Secure Boot
+    config_changed = pyqtSignal(dict)       # Emite la configuración BIOS completa
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._sb_enabled = True
         self._boot_index = 0
+        self._boot_index2 = 1
+        self._boot_index3 = 2
+        self._language_index = 0
+        self._datetime_index = 0
+        self._acpi_index = 0
         self._all_rows: list[BiosRow] = []
         self._selected_index = 0
         self._row_lookup: dict[str, BiosRow] = {}
+        self._config = {
+            "date_time": "06/05/2025 14:32",
+            "language": "English",
+            "boot1": "NVMe SSD",
+            "boot2": "USB Drive",
+            "boot3": "LAN / PXE",
+            "secure_boot": True,
+            "sb_mode": "Standard",
+            "tpm": True,
+            "measured_boot": True,
+            "wake_on_lan": False,
+            "acpi_state": "S3 (Suspend)",
+        }
         self._build_ui()
         self._select_row(0)
 
@@ -362,7 +389,7 @@ class BiosSetupScreen(QWidget):
         self.info_title.setStyleSheet(f"color: {C_VALUE}; background: transparent;")
         layout.addWidget(self.info_title)
 
-        self.info_desc = QLabel("Define la prioridad de arranque. El bootloader se carga desde el primer dispositivo activo.")
+        self.info_desc = QLabel("Selecciona un campo y presiona Enter para cambiarlo. Los valores afectan el POST y el dashboard.")
         self.info_desc.setFont(FONT_SM)
         self.info_desc.setStyleSheet(f"color: #AAAAAA; background: transparent;")
         self.info_desc.setWordWrap(True)
@@ -427,6 +454,10 @@ class BiosSetupScreen(QWidget):
 
         layout.addWidget(btn("Toggle Secure Boot", self._toggle_secure_boot))
         layout.addWidget(btn("Cambiar Boot Device", self._cycle_boot))
+        layout.addWidget(btn("Cambiar Language", self._cycle_language))
+        layout.addWidget(btn("Cambiar Date/Time", self._cycle_datetime))
+        layout.addWidget(btn("Wake on LAN", self._toggle_wake_on_lan))
+        layout.addWidget(btn("ACPI State", self._toggle_acpi_state))
         layout.addStretch()
 
         hint = QLabel("Interactivo — haz clic en cualquier fila o usa teclado")
@@ -458,6 +489,7 @@ class BiosSetupScreen(QWidget):
 
     def _toggle_secure_boot(self):
         self._sb_enabled = not self._sb_enabled
+        self._config["secure_boot"] = self._sb_enabled
         row = self._row_lookup.get("secure_boot")
         mode_row = self._row_lookup.get("sb_mode")
 
@@ -487,18 +519,133 @@ class BiosSetupScreen(QWidget):
             )
 
         self.sb_changed.emit(self._sb_enabled)
+        self._emit_config_changed()
 
-    def _cycle_boot(self):
-        self._boot_index = (self._boot_index + 1) % len(BOOT_DEVICES)
-        row = self._row_lookup.get("boot1")
+    def _cycle_boot(self, item_id: str = "boot1"):
+        if item_id == "boot1":
+            self._boot_index = (self._boot_index + 1) % len(BOOT_DEVICES)
+            key = "boot1"
+        elif item_id == "boot2":
+            self._boot_index2 = (self._boot_index2 + 1) % len(BOOT_DEVICES)
+            key = "boot2"
+        elif item_id == "boot3":
+            self._boot_index3 = (self._boot_index3 + 1) % len(BOOT_DEVICES)
+            key = "boot3"
+        else:
+            return
+
+        self._config[key] = BOOT_DEVICES[getattr(self, f"_{key}_index")]
+        row = self._row_lookup.get(key)
         if row:
-            new_dev = BOOT_DEVICES[self._boot_index]
+            new_dev = self._config[key]
             row.update_value(new_dev, "warn")
-            self.info_title.setText("1st Boot Device cambiado")
+            self.info_title.setText(f"{row.item['key']} cambiado")
             self.info_desc.setText(
-                f"Nuevo dispositivo primario: {new_dev}. "
-                "El sistema intentará cargar el bootloader desde este dispositivo primero."
+                f"Nuevo dispositivo de arranque: {new_dev}. "
+                "El sistema intentará cargar el bootloader desde este orden."
             )
+        self._emit_config_changed()
+
+    def _toggle_sb_mode(self):
+        self._config["sb_mode"] = "Custom" if self._config.get("sb_mode") == "Standard" else "Standard"
+        row = self._row_lookup.get("sb_mode")
+        if row:
+            new_mode = self._config["sb_mode"]
+            row.update_value(new_mode, "normal")
+            self.info_title.setText("Secure Boot Mode cambiado")
+            self.info_desc.setText(
+                f"Modo de Secure Boot: {new_mode}. "
+                "Custom puede usarse para pruebas con claves propias."
+            )
+        self._emit_config_changed()
+
+    def _toggle_tpm(self):
+        self._config["tpm"] = not self._config.get("tpm", True)
+        row = self._row_lookup.get("tpm")
+        if row:
+            new_val = "Present / Active" if self._config["tpm"] else "Absent / Disabled"
+            row.update_value(new_val, "on" if self._config["tpm"] else "off")
+            self.info_title.setText("TPM cambiado")
+            self.info_desc.setText(
+                "El estado del TPM afecta la cadena de confianza de mediciones de arranque."
+            )
+        self._emit_config_changed()
+
+    def _toggle_measured_boot(self):
+        self._config["measured_boot"] = not self._config.get("measured_boot", True)
+        row = self._row_lookup.get("measured_boot")
+        if row:
+            new_val = "Enabled" if self._config["measured_boot"] else "Disabled"
+            row.update_value(new_val, "on" if self._config["measured_boot"] else "off")
+            self.info_title.setText("Measured Boot cambiado")
+            self.info_desc.setText(
+                "La medición del arranque impacta en la detección de cambios de firmware."
+            )
+        self._emit_config_changed()
+
+    def _emit_config_changed(self):
+        self.config_changed.emit(self._config.copy())
+
+    def _cycle_language(self):
+        languages = ["English", "Español", "Français"]
+        self._language_index = (self._language_index + 1) % len(languages)
+        self._config["language"] = languages[self._language_index]
+        row = self._row_lookup.get("language")
+        if row:
+            new_lang = languages[self._language_index]
+            row.update_value(new_lang, "normal")
+            self.info_title.setText("Language cambiado")
+            self.info_desc.setText(
+                f"Idioma de firmware actualizado a {new_lang}. "
+                "Afecta sólo la presentación de la BIOS y los logs del simulador."
+            )
+        self._emit_config_changed()
+
+    def _cycle_datetime(self):
+        timestamps = [
+            "06/05/2025 14:32",
+            "07/07/2026 08:15",
+            "08/08/2026 20:45",
+        ]
+        self._datetime_index = (self._datetime_index + 1) % len(timestamps)
+        self._config["date_time"] = timestamps[self._datetime_index]
+        row = self._row_lookup.get("date_time")
+        if row:
+            new_dt = timestamps[self._datetime_index]
+            row.update_value(new_dt, "normal")
+            self.info_title.setText("Date / Time actualizado")
+            self.info_desc.setText(
+                "La hora del RTC ha cambiado; esto se usará en los logs de arranque."
+            )
+        self._emit_config_changed()
+
+    def _toggle_wake_on_lan(self):
+        self._config["wake_on_lan"] = not self._config["wake_on_lan"]
+        row = self._row_lookup.get("wake_on_lan")
+        if row:
+            new_val = "Enabled" if self._config["wake_on_lan"] else "Disabled"
+            row.update_value(new_val, "on" if self._config["wake_on_lan"] else "off")
+            self.info_title.setText("Wake on LAN cambiado")
+            self.info_desc.setText(
+                "Activa o desactiva la capacidad de encendido remoto. "
+                "Puede afectar la detección de la red en el dashboard."
+            )
+        self._emit_config_changed()
+
+    def _toggle_acpi_state(self):
+        states = ["S3 (Suspend)", "S4 (Hibernate)", "S5 (Power Off)"]
+        self._acpi_index = (self._acpi_index + 1) % len(states)
+        self._config["acpi_state"] = states[self._acpi_index]
+        row = self._row_lookup.get("acpi_state")
+        if row:
+            new_val = states[self._acpi_index]
+            row.update_value(new_val, "normal")
+            self.info_title.setText("ACPI Sleep State cambiado")
+            self.info_desc.setText(
+                f"Estado de energía: {new_val}. "
+                "Afecta el tipo de arranque y recuperación de hardware."
+            )
+        self._emit_config_changed()
 
     def keyPressEvent(self, event: QKeyEvent):
         key = event.key()
@@ -513,6 +660,14 @@ class BiosSetupScreen(QWidget):
                 self._toggle_secure_boot()
             elif item_id == "boot1":
                 self._cycle_boot()
+            elif item_id == "language":
+                self._cycle_language()
+            elif item_id == "date_time":
+                self._cycle_datetime()
+            elif item_id == "wake_on_lan":
+                self._toggle_wake_on_lan()
+            elif item_id == "acpi_state":
+                self._toggle_acpi_state()
         elif key == Qt.Key.Key_F10 or key == Qt.Key.Key_Escape:
             self.go_back.emit()
         super().keyPressEvent(event)
